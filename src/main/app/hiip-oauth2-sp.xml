@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:encryption="http://www.mulesoft.org/schema/mule/encryption" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/encryption http://www.mulesoft.org/schema/mule/encryption/current/mule-encryption.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+    <http:listener-config name="HTTP_Listener:9081" host="0.0.0.0" port="9081" doc:name="HTTP Listener Configuration"/>
+    <encryption:config name="Encryption" doc:name="Encryption"/>
+    <db:template-query name="SELECT_TOKEN" doc:name="Template Query">
+        <db:parameterized-query><![CDATA[SELECT * FROM Token WHERE partnerCode = (SELECT code FROM PartnerApp WHERE clientId=:client_id AND clientSecret=:client_secret) AND accessToken = CONVERT(VARCHAR, :access_token) AND tokenExpirationDatetime >= GETDATE()]]></db:parameterized-query>
+    </db:template-query>
+    <sub-flow name="authorize-app-oauth2-sp-subflow">
+        <logger level="INFO" doc:name="Logger"/>
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Scope">
+            <db:parameterized-query><![CDATA[SELECT * FROM Scope ORDER BY code ASC, mode ASC]]></db:parameterized-query>
+        </db:select>
+        <custom-transformer class="edu.ucsf.hiip.app.AuthorizeApp" doc:name="AuthorizeApp"/>
+    </sub-flow>
+    <flow name="authorize-oauth2-sp">
+        <http:listener config-ref="HTTP_Listener:9081" path="authorize" doc:name="HTTP" allowedMethods="GET, POST" responseStreamingMode="ALWAYS"/>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].redirect_uri]" target="#[variable:redirect_uri]"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].response_type]" target="#[variable:response_type]"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].client_id]" target="#[variable:client_id]"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].state]" target="#[variable:state]"/>
+            <enrich source="#[message.inboundProperties.'http.query.params'.from]" target="#[variable:origin]"/>
+            <enrich source="#[message.payload]" target="#[variable:mapScopeArray]"/>
+        </enricher>
+        <enricher doc:name="Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="SEL PartnerApp">
+                <db:parameterized-query><![CDATA[SELECT id
+FROM PartnerApp
+WHERE clientId = #[flowVars.client_id] AND redirectUrl = #[flowVars.redirect_uri]]]></db:parameterized-query>
+            </db:select>
+            <enrich source="#[message.payload]" target="#[variable:partnerAppId]"/>
+        </enricher>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.partnerAppId.size() == 1 &amp;&amp; null != flowVars.state]">
+                <flow-ref name="authorize-app-oauth2-sp-subflow" doc:name="authorize-app-oauth2-sp-subflow"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Error Subflow"/>
+            </otherwise>
+        </choice>
+    </flow>
+    <sub-flow name="token-error-oauth2-sp-subflow">
+        <logger level="INFO" doc:name="Logger"/>
+    </sub-flow>
+    <sub-flow name="UPSERT-Token-sp">
+        <db:select config-ref="MSSQL_Database" doc:name="SELECT">
+            <db:parameterized-query><![CDATA[SELECT username, partnerCode FROM Token 
+WHERE username = (SELECT username FROM Users WHERE id=#[flowVars.userId[0].id]) 
+AND partnerCode = (SELECT code FROM PartnerApp WHERE id=#[flowVars.partnerAppId[0].id]) --AND isForHiipServiceProvider = 1]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() &gt; 0]">
+                <db:update config-ref="MSSQL_Database" doc:name="UPDATE">
+                    <db:parameterized-query><![CDATA[UPDATE Token
+SET tokenExpirationDatetime = DATEADD(ss, 120, GETDATE()), 
+accessToken = #[flowVars.authCode], 
+refreshToken = null,
+isForHiipServiceProvider = 1,
+modifiedDate = GETDATE() 
+WHERE username = (SELECT username FROM Users WHERE id=#[flowVars.userId[0].id]) 
+AND partnerCode = (SELECT code FROM PartnerApp WHERE id=#[flowVars.partnerAppId[0].id])]]></db:parameterized-query>
+                </db:update>
+            </when>
+            <otherwise>
+                <db:insert config-ref="MSSQL_Database" doc:name="INSERT">
+                    <db:parameterized-query><![CDATA[INSERT Token (partnerCode, tokenExpirationDatetime, accessToken, refreshToken, username, isForHiipServiceProvider)
+VALUES ( (SELECT code FROM PartnerApp WHERE id=#[flowVars.partnerAppId[0].id]), DATEADD(ss, 120, GETDATE()), #[flowVars.authCode], null, (SELECT username FROM Users WHERE id=#[flowVars.userId[0].id]), 1 )]]></db:parameterized-query>
+                </db:insert>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <flow name="authorize-callback-oauth2-sp">
+        <http:listener config-ref="HTTP_Listener:9081" path="authorize/callback" allowedMethods="POST" doc:name="HTTP">
+            <http:response-builder statusCode="307">
+                <http:header headerName="location" value="#[flowVars.redirectUrl]"/>
+            </http:response-builder>
+        </http:listener>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].redirect_uri]" target="#[variable:redirect_uri]"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].response_type]" target="#[variable:response_type]"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].client_id]" target="#[variable:client_id]"/>
+            <enrich source="#[message.inboundProperties['http.query.params'].state]" target="#[variable:state]"/>
+            <enrich source="#[message.inboundProperties.'http.query.params'.from]" target="#[variable:origin]"/>
+            <enrich source="#[message.payload]" target="#[variable:mapScopeArray]"/>
+        </enricher>
+        <enricher doc:name="Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="SEL PartnerApp">
+                <db:parameterized-query><![CDATA[SELECT id
+FROM PartnerApp
+WHERE clientId = #[flowVars.client_id] AND redirectUrl = #[flowVars.redirect_uri]]]></db:parameterized-query>
+            </db:select>
+            <enrich source="#[message.payload]" target="#[variable:partnerAppId]"/>
+        </enricher>
+        <set-variable variableName="password" value="#[mapScopeArray['password']]" doc:name="password"/>
+        <encryption:encrypt config-ref="Encryption" input-ref="#[flowVars.mapScopeArray['password']]" using="JCE_ENCRYPTER" doc:name="enc-password">
+            <encryption:jce-encrypter key="#[flowVars.mapScopeArray['username']]" algorithm="Blowfish" encryptionMode="CBC"/>
+        </encryption:encrypt>
+        <enricher doc:name="Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="SEL Users">
+                <db:parameterized-query><![CDATA[SELECT id
+FROM Users
+WHERE username=#[flowVars.mapScopeArray['username']] --AND password=#[message.payload]]]></db:parameterized-query>
+            </db:select>
+            <enrich source="#[message.payload]" target="#[flowVars.userId]"/>
+        </enricher>
+        <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+            <db:delete config-ref="MSSQL_Database" doc:name="DEL Grant">
+                <db:parameterized-query><![CDATA[DELETE FROM [Grant] 
+WHERE userId=#[flowVars.userId[0].id] AND partnerAppId=#[flowVars.partnerAppId[0].id]]]></db:parameterized-query>
+            </db:delete>
+            <foreach collection="#[flowVars.mapScopeArray]" doc:name="For Each">
+                <choice doc:name="Choice">
+                    <when expression="#[flowVars.key == 'username']">
+                        <logger level="DEBUG" doc:name="Logger"/>
+                    </when>
+                    <when expression="#[flowVars.key == 'password']">
+                        <logger level="INFO" doc:name="Logger"/>
+                    </when>
+                    <otherwise>
+                        <db:insert config-ref="MSSQL_Database" doc:name="INSERT Grant">
+                            <db:parameterized-query><![CDATA[INSERT INTO [Grant] (userId, partnerAppId, scopeId, modifiedDate) 
+VALUES (CONVERT(INT, #[flowVars.userId[0].id]), CONVERT(INT, #[flowVars.partnerAppId[0].id]), CONVERT(INT, #[flowVars.key]), GETDATE())]]></db:parameterized-query>
+                        </db:insert>
+                    </otherwise>
+                </choice>
+            </foreach>
+            <enricher doc:name="Message Enricher">
+                <encryption:encrypt config-ref="Encryption" input-ref="#[flowVars.mapScopeArray['username'] + flowVars.mapScopeArray['password'] + server.dateTime]" using="JCE_ENCRYPTER" doc:name="authCode">
+                    <encryption:jce-encrypter key="#[flowVars.mapScopeArray['username']]" algorithm="Blowfish" encryptionMode="CBC"/>
+                </encryption:encrypt>
+                <enrich source="#[payload.replace('+', '')]" target="#[variable:authCode]"/>
+            </enricher>
+            <flow-ref name="UPSERT-Token-sp" doc:name="UPSERT-Token-sp"/>
+        </transactional>
+        <set-variable variableName="redirectUrl" value="#[flowVars.redirect_uri + '?code=' + flowVars.authCode + '&amp;state=' + flowVars.state]" doc:name="redirectUrl"/>
+    </flow>
+    <flow name="token-oauth2-sp">
+        <http:listener config-ref="HTTP_Listener:9081" path="token" allowedMethods="POST" doc:name="HTTP">
+            <http:response-builder statusCode="200" reasonPhrase="success"/>
+        </http:listener>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.payload.grant_type]" target="#[variable:grant_type]"/>
+            <enrich source="#[message.payload.redirect_uri]" target="#[variable:redirect_uri]"/>
+            <enrich source="#[message.payload.client_secret]" target="#[variable:client_secret]"/>
+            <enrich source="#[message.payload.code]" target="#[variable:code]"/>
+            <enrich source="#[message.payload.client_id]" target="#[variable:client_id]"/>
+            <enrich source="#[message.payload.refresh_token]" target="#[variable:refresh_token]"/>
+        </enricher>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.grant_type == 'refresh_token']">
+                <db:select config-ref="MSSQL_Database" doc:name="SEL Token, Partner">
+                    <db:parameterized-query><![CDATA[SELECT * FROM Token WHERE refreshToken=#[flowVars.refresh_token]]]></db:parameterized-query>
+                </db:select>
+            </when>
+            <otherwise>
+                <db:select config-ref="MSSQL_Database" doc:name="SEL Token,PartnerApp">
+                    <db:parameterized-query><![CDATA[SELECT * FROM Token WHERE partnerCode = (SELECT code FROM PartnerApp WHERE clientId=#[flowVars.client_id] AND clientSecret=#[flowVars.client_secret]) AND accessToken = #[flowVars.code] AND tokenExpirationDatetime >= GETDATE() --AND isForHiipServiceProvider = 1]]></db:parameterized-query>
+                </db:select>
+            </otherwise>
+        </choice>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() == 1]">
+                <enricher doc:name="Message Enricher">
+                    <encryption:encrypt config-ref="Encryption" input-ref="#[flowVars.client_id + server.dateTime]" using="JCE_ENCRYPTER" doc:name="accessToken">
+                        <encryption:jce-encrypter key="#[flowVars.client_id + server.dateTime]" algorithm="Blowfish" encryptionMode="CBC"/>
+                    </encryption:encrypt>
+                    <enrich source="#[payload.replace('+', '')]" target="#[variable:accessToken]"/>
+                </enricher>
+                <enricher doc:name="Message Enricher">
+                    <encryption:encrypt config-ref="Encryption" input-ref="#[flowVars.client_secret + server.dateTime]" using="JCE_ENCRYPTER" doc:name="refreshToken">
+                        <encryption:jce-encrypter key="#[flowVars.client_secret + server.dateTime]" algorithm="Blowfish" encryptionMode="CBC"/>
+                    </encryption:encrypt>
+                    <enrich source="#[payload.replace('+', '')]" target="#[variable:refreshToken]"/>
+                </enricher>
+                <choice doc:name="Choice">
+                    <when expression="#[flowVars.grant_type == 'refresh_token']">
+                        <db:update config-ref="MSSQL_Database" doc:name="UPDATE Token">
+                            <db:parameterized-query><![CDATA[UPDATE Token
+   SET tokenExpirationDatetime = GETDATE()
+      ,accessToken = #[flowVars.accessToken]
+      ,refreshToken = #[flowVars.refreshToken]
+ WHERE id = #[message.payload[0].id]]]></db:parameterized-query>
+                        </db:update>
+                    </when>
+                    <otherwise>
+                        <logger level="DEBUG" doc:name="Logger"/>
+                    </otherwise>
+                </choice>
+                <set-payload value="#['{\&quot;access_token\&quot;:\&quot;'+flowVars.accessToken+'\&quot;, \&quot;refresh_token\&quot;:\&quot;'+flowVars.refreshToken+'\&quot;, \&quot;expires_in\&quot;:3600, \&quot;token_type\&quot;:\&quot;bearer\&quot;}']" doc:name="Set Payload"/>
+            </when>
+            <otherwise>
+                <flow-ref name="token-error-oauth2-sp-subflow" doc:name="token-error-oauth2-sp-subflow"/>
+            </otherwise>
+        </choice>
+    </flow>
+    <flow name="revoke-oauth2-sp">
+        <http:listener config-ref="HTTP_Listener:9081" path="revoke" allowedMethods="POST" doc:name="HTTP"/>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.payload.client_id]" target="#[variable:client_id]"/>
+            <enrich source="#[message.payload.client_secret]" target="#[variable:client_secret]"/>
+            <enrich source="#[message.payload.token]" target="#[variable:token]"/>
+        </enricher>
+        <db:delete config-ref="MSSQL_Database" doc:name="DEL Token">
+            <db:parameterized-query><![CDATA[DELETE FROM Token 
+WHERE partnerCode = (SELECT code from PartnerApp WHERE clientId=#[flowVars.client_id] AND clientSecret=#[flowVars.client_secret]) AND (refreshToken=#[flowVars.token] ) --OR accessToken=#[flowVars.token] )]]></db:parameterized-query>
+        </db:delete>
+        <set-payload value="#['{\&quot;return\&quot;:\&quot;success\&quot;}']" doc:name="Set Payload"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="#[\&quot;error\&quot;: \&quot;DEL token error\&quot;,\&quot;error_description\&quot;: \&quot;Token not found\&quot;]" doc:name="Set Payload"/>
+        </catch-exception-strategy>
+    </flow>
+    <sub-flow name="validate-oauth2-request-sp">
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Token">
+            <db:parameterized-query><![CDATA[SELECT username 
+FROM Token
+WHERE accessToken = #[payload] AND isForHiipServiceProvider = 0 --AND tokenExpirationDatetime > GETDATE()]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[payload.size() &gt; 0]">
+                <enricher doc:name="Message Enricher">
+                    <logger level="INFO" doc:name="Logger"/>
+                    <enrich source="#[message.inboundProperties['http.method']]" target="#[variable:http_verb]"/>
+                    <enrich source="#[message.inboundProperties['http.request.path']]" target="#[variable:scope]"/>
+                    <enrich source="#[payload[0].'username']" target="#[variable:username]"/>
+                </enricher>
+                <expression-transformer expression="#[flowVars.scope = flowVars.scope.substring(flowVars.scope.lastIndexOf('/')+1)]" doc:name="scope"/>
+                <expression-component doc:name="http_verb"><![CDATA[#[flowVars.http_verb = flowVars.http_verb == 'GET' ? 0 : (flowVars.http_verb == 'PUT' ? 1 : (flowVars.http_verb == 'POST' ? 2 : (flowVars.http_verb == 'DELETE' ? 3 : 0 )))]]]></expression-component>
+                <db:select config-ref="MSSQL_Database" doc:name="SEL Grant,Scope">
+                    <db:parameterized-query><![CDATA[SELECT s.hiipApi FROM Scope as s JOIN [Grant] as g ON g.scopeId = s.id WHERE s.mode = CONVERT(int, #[flowVars.http_verb]) AND s.code=CONVERT(VARCHAR, #[flowVars.scope]) AND g.userId= (SELECT id FROM Users WHERE username= CONVERT(VARCHAR, #[flowVars.username]) )]]></db:parameterized-query>
+                </db:select>
+                <choice doc:name="Choice">
+                    <when expression="#[message.payload.size() &gt; 0]">
+                        <set-variable variableName="valid" value="1" doc:name="valid==true"/>
+                    </when>
+                    <otherwise>
+                        <set-variable variableName="valid" value="0" doc:name="valid==false"/>
+                    </otherwise>
+                </choice>
+            </when>
+            <otherwise>
+                <set-variable variableName="valid" value="0" doc:name="valid==false"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+</mule>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ws="http://www.mulesoft.org/schema/mule/ws"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <context:property-placeholder location="config.properties" />
+
+    <http:listener-config name="api-httpListenerConfig" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration" />
+    <http:request-config name="HTTP_Request_Configuration" host="testapi.ucsfmedicalcenter.org" port="80" basePath="/API/Tag/" connectionIdleTimeout="600000" doc:name="HTTP Request Configuration"/>
+    
+    
+    <db:mysql-config name="HIIP-DB" host="localhost" port="3306" user="hiipuser" password="H11pDev$" database="hiip" doc:name="MySQL Configuration"/>
+    <db:generic-config name="MSSQL_Database" url="${jdbc.url}" driverClassName="com.microsoft.sqlserver.jdbc.SQLServerDriver" doc:name="Generic Database Configuration"/>
+
+
+    <ws:consumer-config name="Web_Service_Consumer-SetSDEValues" wsdlLocation="SetSDEValues.wsdl" service="Patient" port="IPatient2012"                                                                                           serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Custom.Clinical.GeneratedServices/Patient.svc/basic" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="Web_Service_Consumer" wsdlLocation="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Access.GeneratedServices/Patient.svc?wsdl" service="Patient" port="IPatient2012"           serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Access.GeneratedServices/Patient.svc/basic" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="Web_Service_Consumer-EMERGETST2" wsdlLocation="https://mcepicwic804.ucsfmedicalcenter.org/Interconnect-IB/wcf/Epic.Access.GeneratedServices/Patient.svc?wsdl" service="Patient" port="IPatient2014" serviceAddress="https://mcepicwic804.ucsfmedicalcenter.org/Interconnect-IB/wcf/Epic.Access.GeneratedServices/Patient.svc/basic_2014" doc:name="Web Service Consumer">
+        <ws:security>
+            <ws:wss-username-token username="emp:UCSFICSVCHIIP" password="H11p_u53r_c1!3nt" passwordType="TEXT"/>
+        </ws:security>
+    </ws:consumer-config>
+    <ws:consumer-config name="GetAdmittedPatients"     wsdlLocation="http://mcepicwic803.ucsfmedicalcenter.org/Interconnect-EMERGETST2/wcf/Custom.Clinical.GeneratedServices/Patient.svc?wsdl" service="Patient" port="IPatient20121"  serviceAddress="http://mcepicwic803.ucsfmedicalcenter.org/Interconnect-EMERGETST2/wcf/Custom.Clinical.GeneratedServices/Patient.svc" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="GetPatientDemographics"  wsdlLocation="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Common.GeneratedServices/Patient.svc?wsdl" service="Patient" port="IPatient2010"      serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Common.GeneratedServices/Patient.svc/basic" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="GetTreatmentTeamMembers" wsdlLocation="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Clinical.GeneratedServices/Provider.svc?wsdl" service="Provider" port="IProvider2013" serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Clinical.GeneratedServices/Provider.svc/basic" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="GetCensusByUnit2"        wsdlLocation="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Access.GeneratedServices/Patient.svc?wsdl" service="Patient" port="IPatient2014"      serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.Access.GeneratedServices/Patient.svc/basic_2014" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="GetProvider" 			   wsdlLocation="http://mcepicwic803.ucsfmedicalcenter.org/Interconnect-TST2/wcf/Custom.Clinical.GeneratedServices/Utility.svc?wsdl" service="Utility" port="IUtility2012"  serviceAddress="http://mcepicwic803.ucsfmedicalcenter.org/Interconnect-TST2/wcf/Custom.Clinical.GeneratedServices/Utility.svc" doc:name="Web Service Consumer"/>
+    <ws:consumer-config name="PatientLookup2"          wsdlLocation="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.EMPI.GeneratedServices/External.svc?wsdl" service="External" port="IExternal2013"     serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Epic.EMPI.GeneratedServices/External.svc/basic_2013" doc:name="Web Service Consumer">
+        <ws:security>
+            <ws:wss-username-token username="emp:29502" password="interconnect" passwordType="TEXT"/>
+        </ws:security>
+    </ws:consumer-config>
+    
+</mule>

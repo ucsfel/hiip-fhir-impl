@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:hl7="http://www.mulesoft.org/schema/mule/hl7" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/hl7 http://www.mulesoft.org/schema/mule/hl7/current/mule-hl7.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <vm:connector name="VM" validateConnections="true" doc:name="VM"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8400"  doc:name="HTTP Listener Configuration"/>
+    <sub-flow name="resource-router">
+        <flow-ref name="task-privilege" doc:name="task-privilege"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.target == 'UCSF']">
+                <flow-ref name="ucsf" doc:name="ucsf"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="ucsf">
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.resource == 'INPATIENT']">
+                <flow-ref name="ucsf-inpatient" doc:name="ucsf-inpatient"/>
+            </when>
+            <when expression="#[flowVars.resource == 'PATIENT']">
+                <flow-ref name="ucsf-patient" doc:name="ucsf-patient"/>
+            </when>
+            <when expression="#[flowVars.resource == 'TREATMENT_TEAM']">
+                <flow-ref name="ucsf-treatment-team" doc:name="ucsf-treatment-team"/>
+            </when>
+            <when expression="#[flowVars.resource == 'CENSUS_UNIT']">
+                <flow-ref name="ucsf-census-unit" doc:name="ucsf-census-unit"/>
+            </when>
+            <when expression="#[flowVars.resource == 'MFN']">
+                <flow-ref name="ucsf-mfn" doc:name="ucsf-mfn"/>
+            </when>
+            <when expression="#[flowVars.resource == 'PROVIDER']">
+                <flow-ref name="ucsf-provider" doc:name="ucsf-provider"/>
+            </when>
+            <when expression="#[flowVars.resource == 'PATIENTS']">
+                <flow-ref name="ucsf-patient-lookup" doc:name="ucsf-patient-lookup"/>
+            </when>
+            <when expression="#[flowVars.resource == 'COVERAGE']">
+                <flow-ref name="fhir-patient-coverage" doc:name="fhir-patient-coverage"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO" doc:name="Logger"/>
+    </sub-flow>
+    <sub-flow name="ucsf-inpatient">
+        <ws:consumer config-ref="GetAdmittedPatients" operation="GetAdmittedPatients" doc:name="GetAdmitted Patients" mtomEnabled="true"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Name">
+            <when expression="#[flowVars.searchNameExact != null]">
+                <choice doc:name="Exact">
+                    <when expression="#[flowVars.searchNameExact contains ',']">
+                        <set-variable variableName="searchLast" value="#[flowVars.searchNameExact.split(',')[0].trim()]" doc:name="searchLast"/>
+                        <set-variable variableName="searchFirst" value="#[flowVars.searchNameExact.split(',')[1].trim()]" doc:name="searchFirst"/>
+                        <dw:transform-message doc:name="Filter-Last">
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetAdmittedPatientsResponse.GetAdmittedPatientsResult.Patients.*PatientRecord 
+filter (upper ($.Name splitBy ',')[0] ) == upper flowVars.searchLast
+]]></dw:set-payload>
+                        </dw:transform-message>
+                        <dw:transform-message doc:name="Filter-First">
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload filter (upper ($.Name splitBy ",")[1] ) == (upper flowVars.searchFirst)
+
+]]></dw:set-payload>
+                        </dw:transform-message>
+                    </when>
+                    <otherwise>
+                        <dw:transform-message doc:name="Filter-Name:exact">
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetAdmittedPatientsResponse.GetAdmittedPatientsResult.Patients.*PatientRecord 
+filter upper $.Name == upper flowVars.searchNameExact]]></dw:set-payload>
+                        </dw:transform-message>
+                    </otherwise>
+                </choice>
+            </when>
+            <when expression="#[flowVars.searchName != null]">
+                <choice doc:name="Match">
+                    <when expression="#[flowVars.searchName contains ',']">
+                        <set-variable variableName="searchLast" value="#[flowVars.searchName.split(',')[0].trim()]" doc:name="searchLast"/>
+                        <set-variable variableName="searchFirst" value="#[flowVars.searchName.split(',')[1].trim()]" doc:name="searchFirst"/>
+                        <dw:transform-message doc:name="Filter-Last">
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetAdmittedPatientsResponse.GetAdmittedPatientsResult.Patients.*PatientRecord 
+filter (upper ($.Name splitBy ',')[0] ) contains upper flowVars.searchLast
+]]></dw:set-payload>
+                        </dw:transform-message>
+                        <dw:transform-message doc:name="Filter-First">
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload filter (upper ($.Name splitBy ",")[1] ) contains (upper flowVars.searchFirst)
+
+]]></dw:set-payload>
+                        </dw:transform-message>
+                    </when>
+                    <otherwise>
+                        <dw:transform-message doc:name="Filter-Name">
+                            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetAdmittedPatientsResponse.GetAdmittedPatientsResult.Patients.*PatientRecord 
+filter upper $.Name contains upper flowVars.searchName]]></dw:set-payload>
+                        </dw:transform-message>
+                    </otherwise>
+                </choice>
+            </when>
+            <otherwise>
+                <dw:transform-message doc:name="json">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetAdmittedPatientsResponse.GetAdmittedPatientsResult.Patients.*PatientRecord]]></dw:set-payload>
+                </dw:transform-message>
+            </otherwise>
+        </choice>
+        <choice doc:name="Unit">
+            <when expression="#[flowVars.searchUnit != null]">
+                <dw:transform-message doc:name="Filter-Unit">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload 
+filter upper $.Unit contains upper flowVars.searchUnit]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="MRN">
+            <when expression="#[flowVars.searchMrn != null]">
+                <dw:transform-message doc:name="Filter-MRN">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload 
+filter $.MRN == flowVars.searchMrn
+]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="CSN">
+            <when expression="#[flowVars.searchCsn != null]">
+                <dw:transform-message doc:name="Filter-CSN">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload 
+filter $.CSN == flowVars.searchCsn
+]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.filterAccept == '*/*']">
+                <dw:transform-message doc:name="json">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <dw:transform-message doc:name="To FHIR Bundle">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+entry: {
+	title: "Admitted Patients",
+	updated: now,
+	content: { (payload map {
+		encounter: {
+			location: {unit: $.Unit, room: $.Room, bed: $.Bed},
+			patient: {name: $.Name, dob: $.DateOfBirth, MRN: $.MRN, CSN: $.CSN}
+		}})
+	}
+}]]></dw:set-payload>
+                </dw:transform-message>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="ucsf-patient">
+        <ws:consumer config-ref="GetPatientDemographics" operation="GetPatientDemographics" doc:name="GetPatientDemographics"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.privilege &lt; 3]">
+                <dw:transform-message doc:name="Patient Resource &lt; 3">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+using (d = payload.GetPatientDemographicsResponse.GetPatientDemographicsResult) {
+	identifier: [{
+		use: "usual",
+		system: "MRN",
+		value: flowVars.searchMrn,
+		assigner: "UCSF"
+	}]
+}]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <when expression="#[flowVars.privilege &lt; 7]">
+                <dw:transform-message doc:name="Patient Resource &lt; 7">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+using (d = payload.GetPatientDemographicsResponse.GetPatientDemographicsResult) {
+	identifier: [{
+		use: "usual",
+		system: "MRN",
+		value: flowVars.searchMrn,
+		assigner: "UCSF"
+	},
+	{
+		use: "official",
+		system: "National",
+		value: d.NationalIdentifier,
+		assigner: "U.S."
+	}],
+	name: {
+		use: "usual",
+		family: d.Name.LastName,
+		given: d.Name.FirstName,
+		prefix: d.Name.Title,
+		suffix: d.Name.Suffix
+	}
+}]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <when expression="#[flowVars.privilege &lt; 10]">
+                <dw:transform-message doc:name="Patient Resource &lt; 10">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+using (d = payload.GetPatientDemographicsResponse.GetPatientDemographicsResult) {
+	identifier: [{
+		use: "usual",
+		system: "MRN",
+		value: flowVars.searchMrn,
+		assigner: "UCSF"
+	},
+	{
+		use: "official",
+		system: "National",
+		value: d.NationalIdentifier,
+		assigner: "U.S."
+	}],
+	name: {
+		use: "usual",
+		family: d.Name.LastName,
+		given: d.Name.FirstName,
+		prefix: d.Name.Title,
+		suffix: d.Name.Suffix
+	},
+	telecom: [{
+		system: "phone",
+		value: d.Phones.Phone.Number,
+		use: d.Phones.Phone.Type
+	}],
+	gender: d.Gender,
+	birthDate: d.DateOfBirth,
+	address: {
+		line: d.Address.Street,
+		city: d.Address.City,
+		state: d.Address.State,
+		zip: d.Address.Zip,
+		country: d.Address.Country
+	},
+	maritalStatus: d.MaritalStatus
+
+}]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <dw:transform-message doc:name="Copy_of_Patient Resource &lt; 3">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+using (d = payload.GetPatientDemographicsResponse.GetPatientDemographicsResult) {
+	identifier: [{
+		use: "usual",
+		system: "MRN",
+		value: flowVars.searchMrn,
+		assigner: "UCSF"
+	}]
+}]]></dw:set-payload>
+                </dw:transform-message>
+            </otherwise>
+        </choice>
+        <object-to-string-transformer doc:name="Object to String"/>
+    </sub-flow>
+    <sub-flow name="ucsf-patient-lookup">
+        <ws:consumer config-ref="GetPatientDemographics" operation="GetPatientDemographics" doc:name="Web Service Consumer"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </sub-flow>
+    <sub-flow name="ucsf-treatment-team">
+        <ws:consumer config-ref="GetTreatmentTeamMembers" operation="GetTreatmentTeamMembers" doc:name="Web Service Consumer"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetTreatmentTeamMembersResponse.GetTreatmentTeamMembersResult.TreatmentTeamMembers.*Member]]></dw:set-payload>
+        </dw:transform-message>
+        <object-to-string-transformer doc:name="Object to String"/>
+    </sub-flow>
+    <sub-flow name="ucsf-census-unit">
+        <ws:consumer config-ref="GetCensusByUnit2" operation="GetCensusByUnit2" doc:name="Web Service Consumer"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%input payload application/xml
+%output application/json
+---
+payload.GetCensusByUnit2Response.GetCensusByUnit2Result.BeddedPatients.*BeddedPatient2]]></dw:set-payload>
+        </dw:transform-message>
+    </sub-flow>
+    <sub-flow name="ucsf-provider">
+        <ws:consumer config-ref="GetProvider" operation="GetProvider" doc:name="GetProvider"/>
+        <dw:transform-message doc:name="Practitioner Resource">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+using (p = payload.GetProviderResponse.GetProviderResult.Provider) {
+	identifier: [{
+		use: "usual",
+		system: "UCSFID",
+		value: flowVars.searchId,
+		assigner: "UCSF"
+	}],
+	(name: {
+		use: "usual",
+		family: p.LastName,
+		given: p.FirstName
+	}) when (sizeOf p) > 0
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger level="INFO" doc:name="Logger"/>
+    </sub-flow>
+    <sub-flow name="ucsf-mfn">
+        <object-to-string-transformer doc:name="Object to String"/>
+        <custom-transformer class="edu.ucsf.hiip.fhir.MfnToPractitionerArray" doc:name="MfnToJson"/>
+        <logger level="INFO" doc:name="Logger"/>
+    </sub-flow>
+    <flow name="fhirFlow">
+        <set-variable variableName="target" value="UCSF" doc:name="Copy_of_target"/>
+        <set-variable variableName="resource" value="MFN" doc:name="Copy_of_resource"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="patients/admitted">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/patients/admitted" allowedMethods="GET" doc:name="HTTP"/>
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="INPATIENT" doc:name="resource"/>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['Unit']]" target="#[variable:searchUnit]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['Name']]" target="#[variable:searchName]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['MRN']]" target="#[variable:searchMrn]"/>
+            <enrich source="#[message.inboundProperties['accept']]" target="#[variable:filterAccept]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['CSN']]" target="#[variable:searchCsn]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['Name:exact']]" target="#[variable:searchNameExact]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['_id']]" target="#[variable:searchId]"/>
+        </enricher>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="patients">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/patients" allowedMethods="GET" doc:name="HTTP"/>
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="PATIENTS" doc:name="resource"/>
+        <set-payload value="#['&lt;PatientLookup2 xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:EMPI.2013.Services.External&quot;&gt;&lt;PatientIDType xsi:nil=&quot;false&quot;&gt;MRN&lt;/PatientIDType&gt;&lt;PatientID xsi:nil=&quot;false&quot;&gt;97549508&lt;/PatientID&gt;&lt;/PatientLookup2&gt;']" doc:name="Payload"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="patient">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/patient/*" allowedMethods="GET, PUT, POST" doc:name="HTTP"/>
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="PATIENT" doc:name="resource"/>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['MRN']]" target="#[variable:searchMrn]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['_id']]" target="#[variable:searchId]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['privilege']]" target="#[variable:privilege]"/>
+        </enricher>
+        <set-variable variableName="searchMrn" value="#[message.inboundProperties.'http.query.params'.size() == 0 ? message.inboundProperties.'http.request.path'.substring(message.inboundProperties.'http.request.path'.lastIndexOf('/')+1) : flowVars.searchMrn]" doc:name="requestPath"/>
+        <set-payload value="#['&lt;GetPatientDemographics xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Common.2010.Services.Patient&quot;&gt;&lt;PatientID xsi:nil=&quot;false&quot;&gt;' + flowVars.searchMrn + '&lt;/PatientID&gt;&lt;PatientIDType xsi:nil=&quot;false&quot;&gt;MRN&lt;/PatientIDType&gt;&lt;/GetPatientDemographics&gt;']" doc:name="Set Payload"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="group/treatment-team">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/group/treatment-team/" allowedMethods="GET" doc:name="HTTP"/>
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="TREATMENT_TEAM" doc:name="resource"/>
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['CSN']]" target="#[variable:searchCsn]"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['MRN']]" target="#[variable:searchMrn]"/>
+        </enricher>
+        <set-payload value="#['&lt;GetTreatmentTeamMembers xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Clinical.2013.Services.Provider&quot;&gt;&lt;PatientID xsi:nil=&quot;false&quot;&gt;' + flowVars.searchMrn + '&lt;/PatientID&gt;&lt;PatientIDType xsi:nil=&quot;false&quot;&gt;MRN&lt;/PatientIDType&gt;&lt;ContactID xsi:nil=&quot;false&quot;&gt;'+ flowVars.searchCsn + '&lt;/ContactID&gt;&lt;ContactIDType xsi:nil=&quot;false&quot;&gt;CSN&lt;/ContactIDType&gt;&lt;IsActive&gt;true&lt;/IsActive&gt;&lt;LoadAttendings&gt;true&lt;/LoadAttendings&gt;&lt;LoadTreatmentTeam&gt;true&lt;/LoadTreatmentTeam&gt;&lt;LoadAdmitting&gt;true&lt;/LoadAdmitting&gt;&lt;/GetTreatmentTeamMembers&gt;']" doc:name="Set Payload"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="census/unit">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/census/unit/*" doc:name="HTTP"/>
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="CENSUS_UNIT" doc:name="resource"/>
+        <enricher doc:name="Copy_of_Message Enricher">
+            <logger level="INFO" doc:name=""/>
+            <enrich source="#[message.inboundProperties['http.query.params']['Unit']]" target="#[variable:searchUnit]"/>
+        </enricher>
+        <set-variable variableName="searchUnit" value="#[message.inboundProperties.'http.query.params'.size() == 0 ? message.inboundProperties.'http.request.path'.substring(message.inboundProperties.'http.request.path'.lastIndexOf('/')+1) : flowVars.searchUnit]" doc:name="requestPath"/>
+        <set-payload value="#['&lt;GetCensusByUnit2 xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Access.2014.Services.Patient&quot;&gt;&lt;UnitID xsi:nil=&quot;false&quot;&gt;' + flowVars.searchUnit + '&lt;/UnitID&gt;&lt;UnitIDType xsi:nil=&quot;false&quot;&gt;EXTERNAL&lt;/UnitIDType&gt;&lt;/GetCensusByUnit2&gt;']" doc:name="Set Payload"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="provider">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/provider/*" allowedMethods="GET" doc:name="HTTP"/>
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="PROVIDER" doc:name="resource"/>
+        <enricher doc:name="Copy_of_Message Enricher">
+            <logger level="INFO" doc:name="Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['_id']]" target="#[variable:searchId]"/>
+        </enricher>
+        <set-variable variableName="searchId" value="#[message.inboundProperties.'http.query.params'.size() == 0 ? message.inboundProperties.'http.request.path'.substring(message.inboundProperties.'http.request.path'.lastIndexOf('/')+1) : flowVars.searchId]" doc:name="requestPath"/>
+        <set-payload value="#['&lt;GetProvider xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Custom-com:Core.2012.Services.Utility&quot;&gt;&lt;ProviderID xsi:nil=&quot;false&quot;&gt;' + flowVars.searchId + '&lt;/ProviderID&gt;&lt;IDType xsi:nil=&quot;false&quot;&gt;UCSF_ID&lt;/IDType&gt;&lt;/GetProvider&gt;']" doc:name="Set Payload"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+</mule>

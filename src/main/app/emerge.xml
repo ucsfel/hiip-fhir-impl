@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/current/mule-tcp.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd">
+    <sub-flow name="deeplink-subflow-emerge">
+        <set-variable variableName="task" value="#['DEEPLINK']" doc:name="DEEPLINK"/>
+        <set-variable variableName="party" value="#['GEOMERGE-SYSTEM']" doc:name="party"/>
+        <set-variable variableName="role" value="#['SYSTEM']" doc:name="role"/>
+        <flow-ref name="task-privilege" doc:name="task-privilege"/>
+        <logger message="#['emerge-privilege: ' + flowVars.privilege + '\nkey:' + flowVars.apiKey]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.privilege &gt; 0]">
+                <choice doc:name="Method">
+                    <when expression="#[message.inboundProperties['http.method'] == 'GET']">
+                        <flow-ref name="emerge-geolocation" doc:name="emerge-geolocation"/>
+                    </when>
+                    <otherwise>
+                        <flow-ref name="emerge-census" doc:name="emerge-census"/>
+                    </otherwise>
+                </choice>
+            </when>
+            <otherwise>
+                <set-payload value="#['{&quot;visitId&quot;:&quot;0&quot;, &quot;unit&quot;:&quot;0&quot;}']" doc:name="Copy_of_Set Payload"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="emerge-geolocation">
+        <set-payload value="#[message.inboundProperties['http.query.params'].5.trim()]" doc:name="tagId"/>
+        <logger message="#['CALL INTO AWAREPOINT']" level="INFO" doc:name="Copy_of_Logger"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="{tagId}" method="GET" doc:name="Awarepoint">
+            <http:request-builder>
+                <http:uri-param paramName="tagId" value="#[payload]"/>
+                <http:header headerName="Authorization" value="Basic C86F753F-1C32-4472-846E-13FFE783D164"/>
+                <http:header headerName="Content-Type" value="application/json"/>
+            </http:request-builder>
+        </http:request>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <custom-transformer class="edu.ucsf.hiip.Location" doc:name="census^room^bed"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload.length() &gt; 0]">
+                <flow-ref name="emerge-visitId" doc:name="emerge-visitId"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="ICU Endpoint partnerPatientContextLandingPage">
+            <when expression="#[flowVars.unitNo == '9']">
+                <set-variable variableName="partnerPatientContextLandingPage" value="#['https://emergedemo.ucsfmedicalcenter.org/']" doc:name="ICU9"/>
+            </when>
+            <when expression="#[flowVars.unitNo == '13']">
+                <set-variable variableName="partnerPatientContextLandingPage" value="#['https://emergedemo.ucsfmedicalcenter.org/']" doc:name="ICU13"/>
+            </when>
+            <otherwise>
+                <set-variable variableName="partnerPatientContextLandingPage" value="#['https://emergedemo.ucsfmedicalcenter.org/']" doc:name="Census View"/>
+            </otherwise>
+        </choice>
+        <logger message="#[flowVars.partnerPatientContextLandingPage]" level="INFO" doc:name="Copy_of_Logger"/>
+        <set-property propertyName="http.status" value="307" mimeType="text/html" doc:name="Set http.status header 307"/>
+        <set-property propertyName="location" value="#[variable:partnerPatientContextLandingPage]" mimeType="text/html" doc:name="Set Location header"/>
+        <set-payload value="#[NullPayload.getInstance()]" doc:name="Set Empty Payload"/>
+    </sub-flow>
+    <sub-flow name="emerge-census">
+        <logger message="#[payload]" level="INFO" doc:name="Copy_of_Logger"/>
+        <custom-transformer class="edu.ucsf.hiip.Location" doc:name="census^room^bed"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload.length() &gt; 0]">
+                <flow-ref name="emerge-visitId" doc:name="emerge-visitId"/>
+            </when>
+            <otherwise>
+                <set-payload value="#['{&quot;visitId&quot;:&quot;0&quot;, &quot;unit&quot;:&quot;0&quot;}']" doc:name="Set Payload"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="emerge-visitId">
+        <ws:consumer config-ref="Web_Service_Consumer-EMERGETST2" operation="GetCensusByUnit2" doc:name="GetCensusByUnit2"/>
+        <dw:transform-message doc:name="Filter RoomAndBed">
+            <dw:input-payload doc:sample="empty_1.xml"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetCensusByUnit2Response.GetCensusByUnit2Result.BeddedPatients.*BeddedPatient2 
+filter upper $.RoomAndBedName contains upper flowVars.roomAndBed]]></dw:set-payload>
+        </dw:transform-message>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <logger message="#[payload]" level="INFO" doc:name="Copy_of_Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload.length() &gt; 0]">
+                <dw:transform-message doc:name="ContactIDs">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload.ContactIDs.IDType]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <scripting:component doc:name="No Patient Found">
+                    <scripting:script engine="Groovy"><![CDATA[throw new IllegalArgumentException('bad arg')]]></scripting:script>
+                </scripting:component>
+            </otherwise>
+        </choice>
+        <dw:transform-message doc:name="Filter CSN">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload
+ filter $.Type == 'CSN']]></dw:set-payload>
+        </dw:transform-message>
+        <set-variable variableName="visitId" value="#[payload[0].'ID']" doc:name="visitId"/>
+        <set-payload value="#['{&quot;visitId&quot;:&quot;' +payload[0].'ID' + '&quot;, &quot;unit&quot;:&quot;' + flowVars.unitNo + '&quot;}']" mimeType="text/plain" doc:name="Set Payload"/>
+        <logger message="#[flowVars.visitId]" level="INFO" doc:name="Copy_of_Logger"/>
+    </sub-flow>
+    <sub-flow name="emerge-direct">
+        <choice doc:name="Choice">
+            <when expression="#[message.payload == '9']">
+                <set-variable variableName="partnerPatientContextLandingPage" value="#['https://mcdfaswap001.ucsfmedicalcenter.org']" doc:name="ICU9"/>
+            </when>
+            <otherwise>
+                <set-variable variableName="partnerPatientContextLandingPage" value="#['http:/google.com']" doc:name="ICU13"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+</mule>

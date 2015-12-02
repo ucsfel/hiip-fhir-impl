@@ -1,0 +1,146 @@
+#%RAML 0.8
+title: HIIP API
+version: 1.0
+protocols: [HTTP]
+baseUri: http://dev-unified-api.ucsf.edu/clinical/hiip/{version}
+
+
+/register:
+  get:
+    queryParameters:
+      source:
+      patientId: 
+    responses:
+      200:
+        body:
+          text/html:
+
+/authorize:
+  get:
+    queryParameters:
+      target:
+      patientId:
+    responses:
+      200:
+        body:
+          text/html:
+                   
+/callback_internal:
+  get:
+    responses:
+      200:
+        body:
+          application/json:
+          text/html:
+          application/text:
+          
+/deeplink:
+  get:
+    queryParameters:
+      0:
+      1:
+      2:
+      client_id:
+      client_secret:
+      5:
+    responses:
+      200:
+        body:
+          application/json:
+          text/html:
+  post:
+    headers:
+      Authorization:
+        required: true
+        type: string
+        example: Basic 650cc3ff-f0e1-3c60-d8f6-c9d058b2a3ae
+    queryParameters:
+      0:
+      1:
+      2:
+      client_id:
+      client_secret:
+    headers:
+    responses:
+      200:
+        body:
+          application/json:
+          text/plain:          
+/revoke:
+  get:
+    queryParameters:
+      target:
+      patientId:
+    responses:
+      200:
+        body:
+          text/html:
+/patients:
+  /admitted:
+    get:
+      queryParameters:
+        target:
+        name:
+        unit:
+        mrn:
+        csn:
+      responses:
+        200:
+          body:
+            application/json:
+  /census:
+    /{unitId}:
+      get:
+        queryParameters:
+          target:
+        responses:
+          200:
+            body:
+              application/json:
+                          
+/patient:
+  get:
+    queryParameters:
+      target:
+      patientId:
+    responses:
+      200:
+        body:
+          application/json:
+          text/html:
+  /{patientId}:
+    get:
+      responses:
+        200:
+          body:
+            application/json:
+            text/html:
+            application/text:
+  /{patientId}/coverage:
+    get:
+      responses:
+        200:
+          body:
+            application/json:
+            text/html:
+            application/text:
+  /{patientId}/treatment-team:
+    get:
+      queryParameters:
+        target:
+        mrn:
+        csn:
+      responses:
+        200:
+          body:
+            application/json:
+            application/text:  
+/provider:
+  /{providerId}:
+    get:
+      queryParameters:
+        target:
+      responses:
+        200:
+          body:
+            application/json:            

@@ -1,0 +1,39 @@
+#%RAML 0.8
+title: HIIP API
+version: 1.0
+protocols: [HTTP]
+baseUri: http://dev-unified-api.ucsf.edu/clinical/hiip/{version}
+
+
+/deeplink:
+  get:
+    queryParameters:
+      0:
+      1:
+      2:
+      client_id:
+      client_secret:
+      5:
+    responses:
+      200:
+        body:
+          application/json:
+          text/html:
+  post:
+    headers:
+      Authorization:
+        required: true
+        type: string
+        example: Basic 650cc3ff-f0e1-3c60-d8f6-c9d058b2a3ae
+    queryParameters:
+      0:
+      1:
+      2:
+      client_id:
+      client_secret:
+    headers:
+    responses:
+      200:
+        body:
+          application/json:
+          text/plain:          

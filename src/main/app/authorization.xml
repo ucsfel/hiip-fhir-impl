@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+    <sub-flow name="task-privilege">
+        <set-variable variableName="originalPayload" value="#[message.payload]" doc:name="originalPaylod"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.apiKey != null]">
+                <flow-ref name="tasks-privileges-system" doc:name="tasks-privileges-system"/>
+            </when>
+            <otherwise>
+                <flow-ref name="tasks-privileges" doc:name="tasks-privileges"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="Choice">
+            <when expression="#[message.inboundProperties['http.method'] == 'GET']">
+                <set-variable variableName="verb" value="#[1]" doc:name="GET"/>
+            </when>
+            <when expression="#[message.inboundProperties['http.method'] == 'POST']">
+                <set-variable variableName="verb" value="#[2]" doc:name="POST"/>
+            </when>
+            <when expression="#[message.inboundProperties['http.method'] == 'DELETE']">
+                <set-variable variableName="verb" value="#[3]" doc:name="DELETE"/>
+            </when>
+            <when expression="#[message.inboundProperties['http.method'] == 'PUT']">
+                <set-variable variableName="verb" value="#[0]" doc:name="CREATE"/>
+            </when>
+            <otherwise>
+                <set-variable variableName="verb" value="#[1]" doc:name="GET"/>
+            </otherwise>
+        </choice>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <dw:transform-message doc:name="privileges[index]">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+flatten payload filter $.task == flowVars.task map {
+	privilege: $.privilege[flowVars.verb]
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload.contains('privilege')]">
+                <dw:transform-message doc:name="max privilege">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+max payload.*privilege when payload.privilege? otherwise 0]]></dw:set-payload>
+                </dw:transform-message>
+                <set-variable variableName="privilege" value="#[message.payload]" doc:name="Variable"/>
+            </when>
+            <otherwise>
+                <set-variable variableName="privilege" value="#[0]" doc:name="Variable"/>
+            </otherwise>
+        </choice>
+        <set-payload value="#[flowVars.originalPayload]" doc:name="Set Payload"/>
+    </sub-flow>
+    <sub-flow name="tasks-privileges-system">
+        <db:select config-ref="MSSQL_Database" doc:name="MSSQL">
+            <db:parameterized-query><![CDATA[SELECT pa.readLevel, pa.updateLevel, pa.deleteLevel, pa.createLevel, 
+t.code, t.minReadLevel, t.minUpdateLevel, t.minDeleteLevel, t.minCreateLevel 
+FROM Party p
+	INNER JOIN PartyAccountability pa ON pa.party = p.id
+    INNER JOIN Accountability a ON a.id = pa.accountability
+    INNER JOIN AccountabilityTask atsk ON atsk.accountability = a.id
+    INNER JOIN Task t ON t.id = atsk.task
+    INNER JOIN TimePeriod tp ON tp.id = p.timePeriodParty
+WHERE p.apiKey = #[flowVars.apiKey]
+	AND (tp.beginDate <= GETDATE() AND tp.endDate IS NULL)]]></db:parameterized-query>
+        </db:select>
+        <dw:transform-message doc:name="[task:[privileges]]">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload map {
+	task : $.code,
+	privilege : [
+		$.createLevel when $.createLevel >= $.minCreateLevel otherwise 0,
+		$.readLevel when $.readLevel >= $.minReadLevel otherwise 0,
+		$.updateLevel when $.updateLevel >= $.minUpdateLevel otherwise 0,
+		$.deleteLevel when $.deleteLevel >= $.minDeleteLevel otherwise 0
+	]
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </sub-flow>
+    <sub-flow name="tasks-privileges">
+        <set-variable variableName="userId" value="#[19]" doc:name="user"/>
+        <logger level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.userId != null &amp;&amp; flowVars.role != null]">
+                <set-variable variableName="userId" value="#[161]" doc:name="Copy_of_user"/>
+                <db:select config-ref="MSSQL_Database" doc:name="MSSQL">
+                    <db:parameterized-query><![CDATA[SELECT pa.readLevel, pa.updateLevel, pa.deleteLevel, pa.createLevel, 
+t.code, t.minReadLevel, t.minUpdateLevel, t.minDeleteLevel, t.minCreateLevel 
+FROM Users u
+	INNER JOIN UserParty up ON up.users = u.id
+    INNER JOIN Party p ON p.id = up.party
+	INNER JOIN PartyAccountability pa ON pa.party = p.id
+    INNER JOIN Accountability a ON a.id = pa.accountability
+    INNER JOIN AccountabilityTask atsk ON atsk.accountability = a.id
+    INNER JOIN Task t ON t.id = atsk.task
+    INNER JOIN TimePeriod tp ON tp.id = p.timePeriodParty
+WHERE u.id = #[flowVars.userId] and p.code = #[flowVars.party]
+	AND (tp.beginDate <= GETDATE() AND tp.endDate IS NULL)]]></db:parameterized-query>
+                </db:select>
+            </when>
+            <otherwise>
+                <scripting:component doc:name="Groovy">
+                    <scripting:script engine="Groovy"><![CDATA[throw new IllegalArgumentException('bad arg')]]></scripting:script>
+                </scripting:component>
+                <db:select config-ref="HIIP-DB" doc:name="MySQL">
+                    <db:parameterized-query><![CDATA[SELECT pa.readLevel, pa.updateLevel, pa.deleteLevel, pa.createLevel, 
+t.code, t.minReadLevel, t.minUpdateLevel, t.minDeleteLevel, t.minCreateLevel 
+FROM User u
+	INNER JOIN UserParty up ON up.user = u.id
+    INNER JOIN Party p ON p.id = up.party
+	INNER JOIN PartyAccountability pa ON pa.party = p.id
+    INNER JOIN Accountability a ON a.id = pa.accountability
+    INNER JOIN AccountabilityTask atsk ON atsk.accountability = a.id
+    INNER JOIN Task t ON t.id = atsk.task
+    INNER JOIN TimePeriod tp ON tp.id = p.timePeriodParty
+WHERE u.id = #[flowVars.userId] and p.code = #[flowVars.party]
+	AND (tp.beginDate <= CURDATE() AND tp.endDate IS NULL)]]></db:parameterized-query>
+                </db:select>
+            </otherwise>
+        </choice>
+        <dw:transform-message doc:name="[task:[privileges]]">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload map {
+	task : $.code,
+	privilege : [
+		$.createLevel when $.createLevel >= $.minCreateLevel otherwise 0,
+		$.readLevel when $.readLevel >= $.minReadLevel otherwise 0,
+		$.updateLevel when $.updateLevel >= $.minUpdateLevel otherwise 0,
+		$.deleteLevel when $.deleteLevel >= $.minDeleteLevel otherwise 0
+	]
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </sub-flow>
+</mule>

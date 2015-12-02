@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:context="http://www.springframework.org/schema/context" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <apikit:config name="api-config" raml="api.raml" consoleEnabled="true" consolePath="console" doc:name="Router" />
+    <flow name="api-main">
+        <http:listener config-ref="apiHTTPConnector" path="clinical/hiip/1.0/*" doc:name="HTTP"/>
+        <set-variable variableName="apiKey" value="#[message.inboundProperties['authorization'] != null ? message.inboundProperties['authorization'].substring(&quot;Basic &quot;.length()) : null]" doc:name="apiKey"/>
+        <apikit:router config-ref="api-config" doc:name="APIkit Router"/>
+        <exception-strategy ref="api-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="get:/register:api-config">
+        <logger message="API-MAIN : BEGIN 'register' call" level="INFO" doc:name="Logger" />
+        <set-variable variableName="encryptedPatientId" value="#[message.inboundProperties['http.query.params'].1.trim()]" doc:name="get encryptedPatientId" />
+        <flow-ref name="register-oauth2" doc:name="register-oauth2" />
+        <logger message="API-MAIN : END 'register' call" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="get:/authorize:api-config">
+        <logger message="API-MAIN : Begin 'authorize' call" level="INFO" doc:name="Logger" />
+        <set-variable variableName="patientId" value="#[message.inboundProperties['http.query.params'].1.trim()]" doc:name="get unencrypted patientID" />
+        <flow-ref name="authorize-oauth2" doc:name="authorize-oauth2" />
+        <logger message="API-MAIN : END 'authorize' call" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="get:/callback_internal:api-config">
+        <logger message="API-MAIN : BEGIN 'callback_internal' call" level="INFO" doc:name="Logger" />
+        <flow-ref name="callback-oauth2" doc:name="callback-oauth2" />
+        <logger message="API-MAIN : END 'callback_internal' call" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="get:/deeplink:api-config">
+        <logger message="API-MAIN : Begin 'deeplink' call" level="INFO" doc:name="Logger" />
+        <flow-ref name="deeplink" doc:name="deeplink" />
+        <logger message="API-MAIN : END 'deeplink' call" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="post:/deeplink:api-config">
+        <logger message="#['API-MAIN : Begin POST deeplink call - key:' + message.inboundProperties['Authorization']]" level="INFO" doc:name="Logger"/>
+        <flow-ref name="deeplink" doc:name="Copy_of_deeplink"/>
+        <logger message="API-MAIN : END 'deeplink' call" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="get:/revoke:api-config">
+        <logger message="API-MAIN : Begin 'revoke' call" level="INFO" doc:name="Logger" />
+        <set-variable variableName="patientId" value="#[message.inboundProperties['http.query.params'].1.trim()]" doc:name="get unencrypted patientId" />
+        <flow-ref name="revoke-oauth2" doc:name="revoke-oauth2" />
+        <logger message="API-MAIN : END 'revoke' call" level="INFO" doc:name="Logger" />
+    </flow>
+    <flow name="get:/patient/{patientId}/coverage:api-config">
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="COVERAGE" doc:name="COVERAGE"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <flow name="get:/patient/{patientId}:api-config">
+        <set-variable variableName="target" value="UCSF" doc:name="target"/>
+        <set-variable variableName="resource" value="PATIENT" doc:name="PATIENT"/>
+        <set-payload value="#['&lt;GetPatientDemographics xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Common.2010.Services.Patient&quot;&gt;&lt;PatientID xsi:nil=&quot;false&quot;&gt;' + flowVars.patientId + '&lt;/PatientID&gt;&lt;PatientIDType xsi:nil=&quot;false&quot;&gt;MRN&lt;/PatientIDType&gt;&lt;/GetPatientDemographics&gt;']" doc:name="Set MRN"/>
+        <flow-ref name="resource-router" doc:name="resource-router"/>
+    </flow>
+    <apikit:mapping-exception-strategy name="api-apiKitGlobalExceptionMapping">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+    <flow name="get:/provider:api-config">
+        <set-variable variableName="target" value="UCSF" doc:name="Copy_of_target"/>
+        <set-variable variableName="resource" value="PROVIDER" doc:name="Copy_of_resource"/>
+        <enricher doc:name="Copy_of_Copy_of_Message Enricher">
+            <logger level="INFO" doc:name="Copy_of_Logger"/>
+            <enrich source="#[message.inboundProperties['http.query.params']['_id']]" target="#[variable:searchId]"/>
+        </enricher>
+        <set-variable variableName="searchId" value="#[message.inboundProperties.'http.query.params'.size() == 0 ? message.inboundProperties.'http.request.path'.substring(message.inboundProperties.'http.request.path'.lastIndexOf('/')+1) : flowVars.searchId]" doc:name="Copy_of_requestPath"/>
+        <set-payload value="#['&lt;GetProvider xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Custom-com:Core.2012.Services.Utility&quot;&gt;&lt;ProviderID xsi:nil=&quot;false&quot;&gt;' + flowVars.searchId + '&lt;/ProviderID&gt;&lt;IDType xsi:nil=&quot;false&quot;&gt;UCSF_ID&lt;/IDType&gt;&lt;/GetProvider&gt;']" doc:name="Copy_of_Set Payload"/>
+        <flow-ref name="resource-router" doc:name="Copy_of_resource-router"/>
+    </flow>
+    <flow name="get:/patients/admitted:api-config">
+        <set-variable variableName="target" value="UCSF" doc:name="target" />
+        <set-variable variableName="resource" value="INPATIENT" doc:name="resource" />
+        <enricher doc:name="Message Enricher">
+            <logger level="INFO" doc:name="Logger" />
+            <enrich source="#[message.inboundProperties['http.query.params']['Unit']]" target="#[variable:searchUnit]" />
+            <enrich source="#[message.inboundProperties['http.query.params']['Name']]" target="#[variable:searchName]" />
+            <enrich source="#[message.inboundProperties['http.query.params']['MRN']]" target="#[variable:searchMrn]" />
+            <enrich source="#[message.inboundProperties['accept']]" target="#[variable:filterAccept]" />
+            <enrich source="#[message.inboundProperties['http.query.params']['CSN']]" target="#[variable:searchCsn]" />
+            <enrich source="#[message.inboundProperties['http.query.params']['Name:exact']]" target="#[variable:searchNameExact]" />
+            <enrich source="#[message.inboundProperties['http.query.params']['_id']]" target="#[variable:searchId]" />
+        </enricher>
+        <set-payload value="#['&lt;GetAdmittedPatients xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Custom-com:Clinical.2012.Services.Patient&quot; /&gt;']" doc:name="Set Payload" />
+        <flow-ref name="resource-router" doc:name="resource-router" />
+    </flow>
+    <flow name="get:/patients/census/{unitId}:api-config">
+        <set-variable variableName="target" value="UCSF" doc:name="Copy_of_target" />
+        <set-variable variableName="resource" value="CENSUS_UNIT" doc:name="CENSUS_UNIT" />
+        <set-payload value="#['&lt;GetCensusByUnit2 xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Access.2014.Services.Patient&quot;&gt;&lt;UnitID xsi:nil=&quot;false&quot;&gt;' + flowVars.unitId + '&lt;/UnitID&gt;&lt;UnitIDType xsi:nil=&quot;false&quot;&gt;EXTERNAL&lt;/UnitIDType&gt;&lt;/GetCensusByUnit2&gt;']" doc:name="Set Payload" />
+        <flow-ref name="resource-router" doc:name="resource-router" />
+    </flow>
+    <flow name="get:/patient/{patientId}/treatment-team:api-config">
+        <set-variable variableName="target" value="UCSF" doc:name="target" />
+        <set-variable variableName="resource" value="TREATMENT_TEAM" doc:name="resource" />
+        <enricher doc:name="Copy_of_Message Enricher">
+            <logger level="INFO" doc:name="Logger" />
+            <enrich source="#[message.inboundProperties['http.query.params']['CSN']]" target="#[variable:searchCsn]" />
+            <enrich source="#[message.inboundProperties['http.query.params']['MRN']]" target="#[variable:searchMrn]" />
+        </enricher>
+        <set-payload value="#['&lt;GetTreatmentTeamMembers xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Clinical.2013.Services.Provider&quot;&gt;&lt;PatientID xsi:nil=&quot;false&quot;&gt;' + flowVars.patientId + '&lt;/PatientID&gt;&lt;PatientIDType xsi:nil=&quot;false&quot;&gt;MRN&lt;/PatientIDType&gt;&lt;ContactID xsi:nil=&quot;false&quot;&gt;'+ flowVars.searchCsn + '&lt;/ContactID&gt;&lt;ContactIDType xsi:nil=&quot;false&quot;&gt;CSN&lt;/ContactIDType&gt;&lt;IsActive&gt;true&lt;/IsActive&gt;&lt;LoadAttendings&gt;true&lt;/LoadAttendings&gt;&lt;LoadTreatmentTeam&gt;true&lt;/LoadTreatmentTeam&gt;&lt;LoadAdmitting&gt;true&lt;/LoadAdmitting&gt;&lt;/GetTreatmentTeamMembers&gt;']" doc:name="Set Payload" />
+        <flow-ref name="resource-router" doc:name="resource-router" />
+    </flow>
+
+</mule>

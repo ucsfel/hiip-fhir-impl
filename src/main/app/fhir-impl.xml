@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd">
+    <vm:connector name="VM2" validateConnections="true" doc:name="VM"/>
+    <sub-flow name="fhir-patient">
+        <logger level="INFO" doc:name="Logger"/>
+        <flow-ref name="task-privilege" doc:name="task-privilege"/>
+    </sub-flow>
+    <sub-flow name="fhir-patient-coverage">
+        <set-variable variableName="task" value="#['PAT_DEMOGRAPHICS']" doc:name="task"/>
+        <flow-ref name="task-privilege" doc:name="task-privilege"/>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="GetGuarantorsAndCoverages" doc:name="Web Service Consumer"/>
+        <logger level="INFO" doc:name="Logger"/>
+    </sub-flow>
+    <flow name="fhirFlow2">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="test" connector-ref="VM2" doc:name="VM">
+            <vm:transaction action="NOT_SUPPORTED"/>
+        </vm:inbound-endpoint>
+        <set-variable variableName="task" value="#['PAT_DEMOGRAPHICS']" doc:name="Copy_of_task"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload doc:sample="empty.xml"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%input payload application/xml
+%output application/json
+---
+payload.GetGuarantorsAndCoverages2Result.Guarantors.*Guarantor map {
+	subscriber : {
+		reference : {
+			name : $.DisplayName,
+			contact : {
+				relationship : $.RelationshipToPatient
+			}
+		}		
+	},
+	coverage : $.Coverages.*Coverage2 map {
+		issuer : $.PayorName,
+		bin : $.BenefitCode,
+				period : {
+			start : $.EffectiveFromDate,
+			end : $.EffectiveToDate
+		},
+		type : {
+			display : payload.GetGuarantorsAndCoverages2Result.Guarantors.Guarantor.Type,
+			medicarecoverage : $.MedicareCoverageType,
+			code : $.PlanID.IDType.ID
+		},
+		subscriberId : $.GroupNumber,
+		group : $.GroupName,
+		plan : $.PlanName
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>

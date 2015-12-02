@@ -1,0 +1,404 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:ws="http://www.mulesoft.org/schema/mule/ws"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+<!--     <db:generic-config name="MSSQL_Database" url="jdbc:sqlserver://10.50.30.65:1433;DataBaseName=hiip_db_dev;username=hiipadmin;password=H11pDev$" driverClassName="com.microsoft.sqlserver.jdbc.SQLServerDriver" doc:name="Generic Database Configuration"/> -->
+<!-- 	<ws:consumer-config name="Web_Service_Consumer_Interconnect" wsdlLocation="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Custom.Clinical.GeneratedServices/Patient.svc?wsdl" service="Patient" port="IPatient2012" serviceAddress="http://mccdhiwic800.ucsfmedicalcenter.org/Interconnect-CDHI/wcf/Custom.Clinical.GeneratedServices/Patient.svc/basic" doc:name="Web Service Consumer"/> -->
+<!-- 	<ws:consumer-config name="Web_Service_Consumer_Interconnect" wsdlLocation="${ws.interconnect.wsdlLocation}" service="${ws.interconnect.service}" port="${ws.interconnect.port}" serviceAddress="${ws.interconnect.serviceAddress}" doc:name="Web Service Consumer"/> -->
+    <sub-flow name="UPSERT-Users" >
+        <db:select config-ref="MSSQL_Database" doc:name="SELECT">
+            <db:parameterized-query><![CDATA[SELECT * FROM Users 
+WHERE username = CONVERT(VARCHAR, #[flowVars.patientId])]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() == 0]">
+                <db:insert config-ref="MSSQL_Database" doc:name="INSERT">
+                    <db:parameterized-query><![CDATA[INSERT INTO Users (username, last_login)
+VALUES ( CONVERT(VARCHAR, #[flowVars.patientId]), GETDATE())]]></db:parameterized-query>
+                </db:insert>
+            </when>
+            <otherwise>
+                <db:update config-ref="MSSQL_Database" doc:name="UPDATE">
+                    <db:parameterized-query><![CDATA[UPDATE Users 
+SET last_login = GETDATE() 
+WHERE username = #[flowVars.patientId]]]></db:parameterized-query>
+                </db:update>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="UPSERT-Identifier" >
+        <set-variable variableName="partnerCode" value="HYPERSPACE" doc:name="partnerCode"/>
+        <db:select config-ref="MSSQL_Database" doc:name="SELECT">
+            <db:parameterized-query><![CDATA[SELECT userId, partnerCode FROM Identifier 
+WHERE userId = (SELECT id FROM Users WHERE username=CONVERT(VARCHAR, #[flowVars.patientId])) AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() == 0]">
+                <db:insert config-ref="MSSQL_Database" doc:name="INSERT">
+                    <db:parameterized-query><![CDATA[INSERT Identifier
+VALUES (NULL, #[flowVars.partnerCode], CONVERT(VARCHAR, #[flowVars.patientId]), (SELECT id FROM Users WHERE username = CONVERT(VARCHAR, #[flowVars.patientId])), 1 );]]></db:parameterized-query>
+                </db:insert>
+            </when>
+            <otherwise>
+                <db:update config-ref="MSSQL_Database" doc:name="UPDATE">
+                    <db:parameterized-query><![CDATA[UPDATE Identifier
+SET partnerPatientId = CONVERT(VARCHAR, #[flowVars.patientId])
+WHERE userId = (SELECT id FROM Users WHERE username=CONVERT(VARCHAR, #[flowVars.patientId])) AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+                </db:update>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="UPSERT-OAuth-Identifier" >
+        <db:select config-ref="MSSQL_Database" doc:name="SELECT">
+            <db:parameterized-query><![CDATA[SELECT userId, partnerCode FROM Identifier 
+WHERE userId = (SELECT id FROM Users WHERE username=#[flowVars.accessToken]) AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() == 0]">
+                <db:insert config-ref="MSSQL_Database" doc:name="INSERT">
+                    <db:parameterized-query><![CDATA[INSERT Identifier
+VALUES ( CONVERT(VARCHAR, #[flowVars.refreshToken]), #[flowVars.partnerCode], CONVERT(VARCHAR, #[flowVars.accessToken]), (SELECT id FROM Users WHERE username = CONVERT(VARCHAR, #[flowVars.patientId])), 1 );]]></db:parameterized-query>
+                </db:insert>
+            </when>
+            <otherwise>
+                <db:update config-ref="MSSQL_Database" doc:name="UPDATE">
+                    <db:parameterized-query><![CDATA[UPDATE Identifier
+SET partnerPatientId = CONVERT(VARCHAR, #[flowVars.accessToken]),
+refreshToken = CONVERT(VARCHAR, #[flowVars.refreshToken])
+WHERE userId = (SELECT id FROM Users WHERE username=#[flowVars.accessToken]) AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+                </db:update>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="UPSERT-Token" >
+        <db:select config-ref="MSSQL_Database" doc:name="SELECT">
+            <db:parameterized-query><![CDATA[SELECT username, partnerCode FROM Token 
+WHERE username = CONVERT(VARCHAR, #[flowVars.patientId]) AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() == 0]">
+                <db:insert config-ref="MSSQL_Database" doc:name="INSERT">
+                    <db:parameterized-query><![CDATA[INSERT Token (partnerCode, tokenExpirationDatetime, accessToken, refreshToken, username)
+VALUES ( CONVERT(VARCHAR, #[flowVars.partnerCode]), #[flowVars.expiresIn], #[flowVars.accessToken], #[flowVars.refreshToken], CONVERT(VARCHAR, #[flowVars.patientId]) )]]></db:parameterized-query>
+                </db:insert>
+            </when>
+            <otherwise>
+                <db:update config-ref="MSSQL_Database" doc:name="UPDATE">
+                    <db:parameterized-query><![CDATA[UPDATE Token
+SET tokenExpirationDatetime = #[flowVars.expiresIn], 
+accessToken = #[flowVars.accessToken], 
+refreshToken = #[flowVars.refreshToken]
+WHERE username = CONVERT(VARCHAR, #[flowVars.patientId]) AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+                </db:update>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="decrypt-patientid"  doc:description="It is expectected to be in query parameter with key = 1">
+        <set-variable variableName="derivedKey" value="${ws.interconnect.aes.key}" doc:name="derivedKey"/>
+        <custom-transformer class="edu.ucsf.hiip.AESEncryption" doc:name="Decrypt"/>
+    </sub-flow>
+    <flow name="register-oauth2" initialState="started" >
+        <enricher doc:name="Message Enricher">
+            <flow-ref name="decrypt-patientid" doc:name="decrypt-patientid"/>
+            <enrich source="#[message.outboundProperties['patientId']]" target="#[variable:patientId]"/>
+        </enricher>    
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Identifier (source, patientId)">
+            <db:parameterized-query><![CDATA[SELECT * FROM Identifier 
+WHERE partnerCode = 'HYPERSPACE' 
+AND partnerPatientId = CONVERT(VARCHAR, #[flowVars.patientId])
+AND isActive = 1]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() == 0]">
+                <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+                    <flow-ref name="UPSERT-Users" doc:name="UPSERT-Users"/>
+                    <flow-ref name="UPSERT-Identifier" doc:name="UPSERT-Identifier"/>
+                </transactional>
+            </when>
+            <otherwise>
+                <logger level="DEBUG" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <flow-ref name="list-app-oauth2" doc:name="list-app-oauth2"/>
+    </flow>
+    <sub-flow name="list-app-oauth2" >
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Partners">
+            <db:parameterized-query><![CDATA[SELECT * FROM Partner]]></db:parameterized-query>
+        </db:select>
+        <set-variable variableName="partners" value="#[message.payload]" doc:name="Partners"/>
+        <expression-component doc:name="?: for encryptedPatientId"><![CDATA[#[flowVars.encryptedPatientId = message.inboundProperties['http.query.params'].isEmpty() ?  flowVars.encryptedPatientId : message.inboundProperties['http.query.params'].1.trim()]]]></expression-component>
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Identifier (patientId)">
+            <db:parameterized-query><![CDATA[SELECT * FROM Identifier 
+WHERE userId = (SELECT id FROM Users WHERE username=CONVERT(VARCHAR, #[flowVars.patientId]))
+AND isActive = 1]]></db:parameterized-query>
+        </db:select>
+        <set-variable variableName="userIdentifiers" value="#[message.payload]" doc:name="UserIdentifiers"/>
+        <enricher source="#[message.payload[0].username]" target="#[message.payload]" doc:name="Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="SEL Users">
+                <db:parameterized-query><![CDATA[SELECT username
+FROM Users
+WHERE id = #[flowVars.userIdentifiers[0].userId]]]></db:parameterized-query>
+            </db:select>
+        </enricher>
+        <set-variable variableName="hiipBaseURL" value="${hiip.uri.baseURL}" doc:name="Variable"/>
+        <logger level="DEBUG" doc:name="Logger" message="Register App : HIIP Base URL --&gt; #[flowVars.hiipBaseURL]"/>
+        <custom-transformer class="edu.ucsf.hiip.app.HiipApp" doc:name="WebApp"/>
+    </sub-flow>
+    <flow name="authorize-oauth2" >
+<!--         <http:listener config-ref="HTTP_Listener:9082" path="authorize" allowedMethods="GET" doc:name="HTTP"/> -->
+        <flow-ref name="authorize-oauth2-subflow" doc:name="authorize-oauth2-subflow"/>
+    </flow>
+    <sub-flow name="authorize-oauth2-subflow" >
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Token (partnerCode, username)">
+            <db:parameterized-query><![CDATA[SELECT t.partnerCode, t.tokenExpirationDatetime, t.accessToken, t.refreshToken, p.clientId, p.clientSecret, p.authorizeApi, p.tokenApi, p.patientContextApi
+FROM Token AS t JOIN Partner AS p
+ON t.partnerCode = p.code
+WHERE t.username = CONVERT(VARCHAR, #[flowVars.patientId]) AND t.partnerCode = CONVERT(VARCHAR, #[message.inboundProperties['http.query.params'].0.trim()])
+ORDER BY t.partnerCode, t.tokenExpirationDatetime]]></db:parameterized-query>
+        </db:select>
+        <set-variable variableName="partnerCode" value="#[message.inboundProperties['http.query.params'].0.trim()]" doc:name="partnerCode"/>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() &gt; 0]">
+                <enricher doc:name="Message Enricher">
+                    <logger level="DEBUG" doc:name="Logger"/>
+                    <enrich source="#[message.payload[0].refreshToken]" target="#[variable:refreshToken]"/>
+                    <enrich source="#[message.payload[0].tokenExpirationDatetime]" target="#[variable:expiresIn]"/>
+                    <enrich source="#[message.payload[0].accessToken]" target="#[variable:accessToken]"/>
+                    <enrich source="#[message.payload[0].clientId]" target="#[variable:clientId]"/>
+                    <enrich source="#[message.payload[0].clientSecret]" target="#[variable:clientSecret]"/>
+                    <enrich source="#[message.payload[0].tokenApi]" target="#[variable:tokenApi]"/>
+                    <enrich source="#[message.inboundProperties['http.query.params'].1.trim()]" target="#[variable:patientId]"/>
+                    <enrich source="#[message.payload[0].patientContextApi]" target="#[variable:patientContextApi]"/>
+                </enricher>
+                <flow-ref name="deeplink-subflow-oauth2" doc:name="deeplink-subflow-oauth2"/>
+            </when>
+            <otherwise>
+                <db:select config-ref="MSSQL_Database" doc:name="SEL Partner (partnerCode)">
+                    <db:parameterized-query><![CDATA[SELECT * FROM Partner WHERE code = #[message.inboundProperties['http.query.params'].0.trim()]]]></db:parameterized-query>
+                </db:select>
+                <set-variable variableName="partnerInfo" value="#[message.payload]" doc:name="partnerInfo"/>
+                <custom-transformer class="edu.ucsf.hiip.Authorize" doc:name="Authorize"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+    <sub-flow name="set-smartdatavalue-subflow" >
+        <enricher doc:name="Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="Copy_of_SEL Partners">
+                <db:parameterized-query><![CDATA[SELECT * FROM Partner]]></db:parameterized-query>
+            </db:select>
+            <enrich source="#[message.payload]" target="#[variable:partners]"/>
+        </enricher>
+        <enricher doc:name="Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="Copy_of_SEL Identifier (patientId)*">
+                <db:parameterized-query><![CDATA[SELECT * FROM Identifier 
+WHERE userId = (SELECT id FROM Users WHERE username=#[flowVars.patientId]) --this may need scoping AA
+AND isActive = 1]]></db:parameterized-query>
+            </db:select>
+            <enrich source="#[message.payload]" target="#[variable:useridentifiers]"/>
+        </enricher>
+        <enricher source="#[message.payload[0].username]" target="#[message.payload]" doc:name="Copy_of_Message Enricher">
+            <db:select config-ref="MSSQL_Database" doc:name="Copy_of_SEL Users*">
+                <db:parameterized-query><![CDATA[SELECT username
+FROM Users
+WHERE id = (SELECT id FROM Users WHERE username=#[flowVars.patientId])]]></db:parameterized-query>
+            </db:select>
+        </enricher>
+        <set-variable variableName="hiipBaseURL" value="${hiip.uri.baseURL}" doc:name="Variable"/>
+        <logger message="SetSDEValues WS Call : HIIP Base URL --&gt; #[flowVars.hiipBaseURL]" level="DEBUG" doc:name="Logger"/>
+        <custom-transformer class="edu.ucsf.hiip.DeepLinkedApps" doc:name="DeepLinkApps"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <set-variable variableName="pl" value="#[payload]" doc:name="Variable"/>
+        <logger level="DEBUG" doc:name="Logger" message="Invoking SetSDEValues Interconnect web service with Request: #[flowVars.pl]"/>
+        <set-payload value="#[flowVars.pl]" doc:name="Set Payload"/>
+        <ws:consumer config-ref="Web_Service_Consumer-SetSDEValues" operation="SetSDEValues" doc:name="Interconnect-SetSDEValues"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <logger message="SetSDEValues Interconnect web service Response: #[payload]" level="DEBUG" doc:name="Logger"/>
+    </sub-flow>
+    <sub-flow name="callback-subflow-oauth2" >
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Partner (partnerCode)">
+            <db:parameterized-query><![CDATA[SELECT * FROM Partner WHERE code = #[flowVars.partnerCode]]]></db:parameterized-query>
+        </db:select>
+        <set-variable variableName="partnerInfo" value="#[message.payload]" doc:name="partnerInfo"/>
+        <enricher doc:name="Copy_of_Message Enricher">
+            <logger level="DEBUG" doc:name="Logger"/>
+            <enrich source="#[message.payload[0].clientId]" target="#[variable:clientId]"/>
+            <enrich source="#[message.payload[0].clientSecret]" target="#[variable:clientSecret]"/>
+            <enrich source="#[message.payload[0].tokenApi]" target="#[variable:tokenApi]"/>
+            <enrich source="#[message.payload[0].patientContextApi]" target="#[variable:patientContextApi]"/>
+        </enricher>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.partnerCode == 'ORCHESTRA']">
+                <flow-ref name="callback-subflow-orchestra" doc:name="callback-subflow-orchestra"/>
+            </when>
+            <otherwise>
+                <custom-transformer class="edu.ucsf.hiip.TokenStore" doc:name="Tokens"/>
+                <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+                    <flow-ref name="UPSERT-OAuth-Identifier" doc:name="UPSERT-OAuth-Identifier"/>
+                    <flow-ref name="UPSERT-Token" doc:name="UPSERT-Token"/>
+                    <flow-ref name="set-smartdatavalue-subflow" doc:name="set-smartdatavalue-subflow"/>
+                </transactional>
+            </otherwise>
+        </choice>
+        <flow-ref name="deeplink-subflow-oauth2" doc:name="deeplink-subflow-oauth2"/>
+    </sub-flow>    
+    <flow name="callback-oauth2" >
+        <set-variable variableName="error" value="#[message.inboundProperties['http.query.params'].error]" doc:name="error"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.error != null &amp;&amp; flowVars.error.length() &gt; 0]">
+                <logger message="callback-oath2 : Error : Access Denied" level="INFO" doc:name="Logger"/>
+                <set-payload value="Access Denied for #[flowVars.partnerCode]" doc:name="Set Payload"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </when>
+            <otherwise>
+                <logger message="callback-oath2 : Success : Access Granted" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="stateParm" value="#[message.inboundProperties['http.query.params'].state.split(':')]" doc:name="stateParm"/>
+                
+		        <set-variable variableName="patientId" value="#[flowVars['stateParm'][1].trim()]" doc:name="get patientId"/>
+		                        
+                <enricher doc:name="Message Enricher">
+                    <logger message="State: #[message.inboundProperties.'http.query.params'.state]" level="DEBUG" doc:name="Logger"/>
+                    <enrich source="#[flowVars['stateParm'][0].trim()]" target="#[variable:partnerCode]"/>
+<!--                     <enrich source="#[flowVars['stateParm'][1].trim()]" target="#[variable:patientId]"/> -->
+                    <enrich source="#[flowVars['stateParm'][2].trim()]" target="#[variable:APeXUserId]"/>
+                    <enrich source="#[flowVars['stateParm'][3].trim()]" target="#[variable:hiipClientId]"/>
+                    <enrich source="#[flowVars['stateParm'][4].trim()]" target="#[variable:hiipClientSecret]"/>
+        <!--             <enrich source="#[message.inboundProperties['http.query.params'].error]" target="#[variable:error]"/> -->
+                </enricher>
+                <flow-ref name="callback-subflow-oauth2" doc:name="callback-subflow-oauth2"/>
+            </otherwise>
+        </choice> 
+    </flow>
+    <flow name="deeplink" >
+        <set-variable variableName="patientId" value="#[message.inboundProperties['http.query.params'].1.trim()]" doc:name="patientId"/>
+        <set-variable variableName="partnerCode" value="#[message.inboundProperties['http.query.params'].0.trim()]" doc:name="partnerCode"/>
+        <choice doc:name="DeepLink Type">
+            <when expression="#[flowVars.partnerCode == 'EMERGE']">
+                <flow-ref name="deeplink-subflow-emerge" doc:name="deeplink-subflow-emerge"/>
+            </when>
+            <when expression="#[flowVars.partnerCode == 'ORCHESTRA']">
+                <flow-ref name="deeplink-subflow-orchestra" doc:name="deeplink-subflow-orchestra"/>
+            </when>
+            <otherwise>
+                <db:select config-ref="MSSQL_Database" doc:name="SEL Token (partnerCode, username)">
+                    <db:parameterized-query><![CDATA[SELECT t.partnerCode, t.tokenExpirationDatetime, t.accessToken, t.refreshToken, p.clientId, p.clientSecret, p.authorizeApi, p.tokenApi, p.patientContextApi
+FROM Token AS t JOIN Partner AS p
+ON t.partnerCode = p.code
+WHERE t.username = CONVERT(VARCHAR, #[message.inboundProperties['http.query.params'].1.trim()]) AND t.partnerCode = #[message.inboundProperties['http.query.params'].0.trim()]
+ORDER BY t.partnerCode, t.tokenExpirationDatetime DESC]]></db:parameterized-query>
+                </db:select>
+                <choice doc:name="Choice">
+                    <when expression="#[message.payload.size() &gt; 0]">
+                        <enricher doc:name="Message Enricher">
+                            <logger level="DEBUG" doc:name="Logger"/>
+                            <enrich source="#[message.payload[0].refreshToken]" target="#[variable:refreshToken]"/>
+                            <enrich source="#[message.payload[0].tokenExpirationDatetime]" target="#[variable:expiresIn]"/>
+                            <enrich source="#[message.payload[0].accessToken]" target="#[variable:accessToken]"/>
+                            <enrich source="#[message.payload[0].clientId]" target="#[variable:clientId]"/>
+                            <enrich source="#[message.payload[0].clientSecret]" target="#[variable:clientSecret]"/>
+                            <enrich source="#[message.payload[0].tokenApi]" target="#[variable:tokenApi]"/>
+                            <enrich source="#[message.payload[0].patientContextApi]" target="#[variable:patientContextApi]"/>
+                        </enricher>
+                        <flow-ref name="deeplink-subflow-oauth2" doc:name="deeplink-subflow-oauth2"/>
+                    </when>
+                    <otherwise>
+                        <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+                            <flow-ref name="UPSERT-Users" doc:name="UPSERT-Users"/>
+                            <set-variable variableName="partnerCode" value="'HYPERSPACE'" doc:name="partnerCode=HYPERSPACE"/>
+                            <flow-ref name="UPSERT-Identifier" doc:name="UPSERT-Identifier"/>
+                            <flow-ref name="authorize-oauth2-subflow" doc:name="authorize-oauth2-subflow"/>
+                        </transactional>
+                    </otherwise>
+                </choice>
+            </otherwise>
+        </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger level="INFO" doc:name="Logger"/>
+            <set-property propertyName="http.status" value="307" doc:name="http.status header 307"/>
+            <set-variable variableName="partnerPatientContextLandingPage" value="#['http://www.ucsf.edu']" doc:name="partnerPatientContextLandingPage"/>
+            <set-property propertyName="location" value="#[variable:partnerPatientContextLandingPage]" doc:name="Set Location header"/>
+            <set-payload value="#[NullPayload.getInstance()]" doc:name="Set Empty Payload"/>
+        </catch-exception-strategy>
+    </flow>
+    <sub-flow name="deeplink-subflow-oauth2" >
+        <logger level="DEBUG" doc:name="Logger"/>
+        <custom-transformer class="edu.ucsf.hiip.DeepLink" doc:name="DeepLink"/>
+        <set-variable variableName="originalPayload" value="#[message.payload]" doc:name="originalPayload"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.refresh == true]">
+                <flow-ref name="UPSERT-Token" doc:name="UPSERT-Token"/>
+                <set-payload value="#[flowVars.originalPayload]" doc:name="Set Payload"/>
+            </when>
+            <otherwise>
+                <logger level="DEBUG" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        
+<!--         <http:response-builder status="307" doc:name="HTTP Response Builder"> -->
+<!--         	<http:location value="https://blip-devel.tidepool.io/#/login?accessToken=OzA5mPljEeSIpwIC80lHlA"/> -->
+<!--         </http:response-builder>    -->
+<!-- 	    <set-property value="https://blip-devel.tidepool.io/#/login?accessToken=OzA5mPljEeSIpwIC80lHlA" propertyName="location" doc:name="Set Location header" /> -->
+	    <set-property value="#[variable:partnerPatientContextLandingPage]" propertyName="location" doc:name="Set Location header" />
+	    <set-property value="307" propertyName="http.status" doc:name="Set http.status header 307" />
+	    <set-payload value="#[NullPayload.getInstance()]" doc:name="Set Empty Payload"/>  
+        
+    </sub-flow>
+    <flow name="revoke-oauth2" >
+        <db:select config-ref="MSSQL_Database" doc:name="SEL Token (partnerCode, username)*">
+            <db:parameterized-query><![CDATA[SELECT t.partnerCode, t.tokenExpirationDatetime, t.accessToken, t.refreshToken, p.clientId, p.clientSecret, p.authorizeApi, p.tokenApi, p.patientContextApi, p.revokeApi
+FROM Token AS t JOIN Partner AS p
+ON t.partnerCode = p.code
+WHERE t.username = CONVERT(VARCHAR, #[flowVars.patientId]) AND t.partnerCode = #[message.inboundProperties['http.query.params'].0.trim()] AND t.isForHiipServiceProvider=0
+ORDER BY t.partnerCode, t.tokenExpirationDatetime]]></db:parameterized-query>
+        </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[message.payload.size() &gt; 0]">
+                <enricher doc:name="Copy_of_Message Enricher*">
+                    <logger level="INFO" doc:name="Logger"/>
+                    <enrich source="#[message.payload[0].refreshToken]" target="#[variable:refreshToken]"/>
+                    <enrich source="#[message.payload[0].tokenExpirationDatetime]" target="#[variable:expiresIn]"/>
+                    <enrich source="#[message.payload[0].accessToken]" target="#[variable:accessToken]"/>
+                    <enrich source="#[message.payload[0].clientId]" target="#[variable:clientId]"/>
+                    <enrich source="#[message.payload[0].clientSecret]" target="#[variable:clientSecret]"/>
+                    <enrich source="#[message.payload[0].tokenApi]" target="#[variable:tokenApi]"/>
+                    <enrich source="#[message.payload[0].patientContextApi]" target="#[variable:patientContextApi]"/>
+                    <enrich source="#[message.payload[0].revokeApi]" target="#[variable:revokeApi]"/>
+                    <enrich source="#[message.inboundProperties['http.query.params'].0.trim()]" target="#[variable:partnerCode]"/>
+                    <enrich source="#[message.inboundProperties['http.query.params'].1.trim()]" target="#[variable:patientId]"/>
+                    <enrich source="#[message.inboundProperties['http.query.params'].2.trim()]" target="#[variable:APeXUserId]"/>
+                </enricher>
+                <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+                    <custom-transformer class="edu.ucsf.hiip.Revoke" doc:name="Revoke"/>
+                    <db:update config-ref="MSSQL_Database" doc:name="UPDATE Identifier">
+                        <db:parameterized-query><![CDATA[UPDATE Identifier  
+SET isActive = 0 
+WHERE userId = (SELECT id FROM Users WHERE username=CONVERT(VARCHAR, #[flowVars.patientId])) 
+AND partnerCode = #[flowVars.partnerCode]]]></db:parameterized-query>
+                    </db:update>
+                    <db:delete config-ref="MSSQL_Database" doc:name="DEL Token">
+                        <db:parameterized-query><![CDATA[DELETE FROM Token
+WHERE username = CONVERT(VARCHAR, #[flowVars.patientId]) AND partnerCode = #[flowVars.partnerCode] AND isForHiipServiceProvider=0]]></db:parameterized-query>
+                    </db:delete>
+                    <flow-ref name="set-smartdatavalue-subflow" doc:name="set-smartdatavalue-subflow"/>
+<!--                     <flow-ref name="set-smartdatavalue-subflow" doc:name="set-smartdatavalue-subflow"/> -->
+                </transactional>
+            </when>
+            <otherwise>
+                <logger level="DEBUG" doc:name="Logger"/>
+                <set-payload value="No record found." doc:name="Set Payload"/>
+            </otherwise>
+        </choice>
+        <flow-ref name="list-app-oauth2" doc:name="list-app-oauth2"/>
+    </flow>
+</mule>

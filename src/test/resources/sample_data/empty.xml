@@ -1,0 +1,105 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<GetGuarantorsAndCoverages2Result xmlns="urn:Epic-com:Access.2014.Services.Patient">
+<Guarantors>
+<Guarantor>
+<Comment></Comment>
+<Coverages>
+<Coverage2>
+<BenefitCode>BC1123</BenefitCode>
+<Description>
+<string xmlns="http://schemas.microsoft.com/2003/10/Serialization/Arrays">This is a description.</string>
+<string xmlns="http://schemas.microsoft.com/2003/10/Serialization/Arrays">This is the second line.</string>
+</Description>
+<EffectiveFromDate>3/8/2012</EffectiveFromDate>
+<EffectiveToDate>3/8/2013</EffectiveToDate>
+<GroupName></GroupName>
+<GroupNumber>55</GroupNumber>
+<ID>
+<IDType>
+<ID>4504</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</ID>
+<MedicareCoverageType>2</MedicareCoverageType>
+<PayorID>
+<IDType>
+<ID>50</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</PayorID>
+<PayorName>SMITH PAYOR NAME</PayorName>
+<PlanID>
+<IDType>
+<ID>98</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</PlanID>
+<PlanName>SMITH PLAN></PlanName>
+<Status>New</Status>
+<Subscriber>SMITH,LAWRENCE</Subscriber>
+</Coverage2>
+</Coverages>
+<DisplayName>SMITH,LAWRENCE</DisplayName>
+<Expiration>3/19/2013</Expiration>
+<ID>
+<IDType>
+<ID>100000848</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</ID>
+<Inactive>false</Inactive>
+<RelationshipToPatient>Self</RelationshipToPatient>
+<Type>Personal/Family</Type>
+</Guarantor>
+<Guarantor>
+<Comment></Comment>
+<Coverages>
+<Coverage2>
+<BenefitCode>BC1123</BenefitCode>
+<Description>
+<string xmlns="http://schemas.microsoft.com/2003/10/Serialization/Arrays">This is a description.</string>
+<string xmlns="http://schemas.microsoft.com/2003/10/Serialization/Arrays">This is the second line.</string>
+</Description>
+<EffectiveFromDate>3/8/2012</EffectiveFromDate>
+<EffectiveToDate>3/8/2013</EffectiveToDate>
+<GroupName></GroupName>
+<GroupNumber>55</GroupNumber>
+<ID>
+<IDType>
+<ID>4504</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</ID>
+<MedicareCoverageType>2</MedicareCoverageType>
+<PayorID>
+<IDType>
+<ID>50</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</PayorID>
+<PayorName>SMITH PAYOR NAME</PayorName>
+<PlanID>
+<IDType>
+<ID>98</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</PlanID>
+<PlanName>SMITH PLAN></PlanName>
+<Status>New</Status>
+<Subscriber>SMITH,LAWRENCE</Subscriber>
+</Coverage2>
+</Coverages>
+<DisplayName>SMITH,LAWRENCE</DisplayName>
+<Expiration>3/19/2013</Expiration>
+<ID>
+<IDType>
+<ID>100000848</ID>
+<Type>INTERNAL</Type>
+</IDType>
+</ID>
+<Inactive>false</Inactive>
+<RelationshipToPatient>Self</RelationshipToPatient>
+<Type>Personal/Family</Type>
+</Guarantor>
+</Guarantors>
+</GetGuarantorsAndCoverages2Result>

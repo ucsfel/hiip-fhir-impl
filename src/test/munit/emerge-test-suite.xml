@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+    <munit:config name="munit" doc:name="MUnit configuration" mock-connectors="false" mock-inbounds="false"/>
+    <spring:beans>
+        <spring:import resource="classpath:emerge.xml"/>
+        <spring:import resource="classpath:global.xml"/>
+    </spring:beans>
+    <munit:test name="emerge-test-suite-emerge-visitIdTest" description="Test">
+        <munit:set payload="#['&lt;GetCensusByUnit2 xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns=&quot;urn:Epic-com:Access.2014.Services.Patient&quot;&gt;&lt;UnitID xsi:nil=&quot;false&quot;&gt;1000005&lt;/UnitID&gt;&lt;!--Optional--&gt;&lt;UnitIDType xsi:nil=&quot;false&quot;&gt;&lt;/UnitIDType&gt;&lt;!--Optional--&gt;&lt;UserID xsi:nil=&quot;false&quot;&gt;&lt;/UserID&gt;&lt;!--Optional--&gt;&lt;UserIDType xsi:nil=&quot;false&quot;&gt;&lt;/UserIDType&gt;&lt;/GetCensusByUnit2&gt;']" doc:name="Set Message">
+            <munit:inbound-properties>
+                <munit:inbound-property key="roomAndBed" value="DGRM9I P"/>
+                <munit:inbound-property key="unitNo" value="9"/>
+            </munit:inbound-properties>
+        </munit:set>
+        <flow-ref name="emerge-visitId" doc:name="Flow-ref to emerge-visitId"/>
+        <munit:assert-on-equals expectedValue="#['{&quot;visitId&quot;:&quot;5037961&quot;, &quot;unit&quot;:&quot;9&quot;}']" actualValue="#[message.payload]" doc:name="Assert Equals"/>
+    </munit:test>
+</mule>
